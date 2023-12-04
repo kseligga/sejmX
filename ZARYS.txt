@@ -1,0 +1,16 @@
+
+api do klubów:
+https://api.sejm.gov.pl/sejm/term10/clubs
+do dataframu
+
+api do pos³ów:
+https://api.sejm.gov.pl/sejm/term10/MP
+do dataframu
+
+api do glosowan:
+https://api.sejm.gov.pl/sejm/term10/votings/1 - ostatnia liczba to nr posiedzenia
+^ st¹d numery glosowan, daty, kto wygral glosowanie
+
+co jakis czas trzeba bedzie sprawdzac aktualne, jakies autoodswiezanie ^
+
+na podstawie tych api scraping z html>to dataframe>obrobka>jakies wykresiki, mapy podobienstwa
