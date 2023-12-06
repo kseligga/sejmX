@@ -1,14 +1,20 @@
 # Importujemy bibliotekę PCA-magic, która implementuje PPCA
+import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
-mps_url = "https://api.sejm.gov.pl/sejm/term10/MP"
+mps_url = "https://api.sejm.gov.pl/sejm/term8/MP"
 mps = pd.read_json(mps_url)
+
 
 mps_clubs = mps['club']
 
-votings_df=pd.read_csv("voting_dfX.csv")
+# TODO nazwy klubów doklejone mądrzej niż po kolei i liczyć że jest to samo co tam
+votings_df=pd.read_csv("voting_dfVIII.csv")
+
+print(set(mps_clubs))
+mps_clubs.replace(np.nan, 'nan', inplace=True)
 
 # size of dot proportional to square of attendance
 sizes=[]
@@ -26,15 +32,47 @@ pca.fit(votings_df)
 # Transform to 2D
 df_pca = pca.transform(votings_df)
 
-club_colors = {
-    'PiS': 'blue',
-    'KO': 'orange',
-    'PSL-TD': 'green',
-    'Polska2050-TD': 'yellow',
-    'Konfederacja': 'navy',
-    'Kukiz15': 'black',
-    'Lewica': 'red'
-}
+# X
+# club_colors = {
+#     'PiS': 'blue',
+#     'KO': 'orange',
+#     'PSL-TD': 'green',
+#     'Polska2050-TD': 'yellow',
+#     'Konfederacja': 'navy',
+#     'Kukiz15': 'black',
+#     'Lewica': 'red'
+# }
+
+# IX
+# club_colors = {
+#     'PiS': 'blue',
+#     'KO': 'orange',
+#     'KP': 'green',
+#     'Polska2050': 'yellow',
+#     'Konfederacja': 'navy',
+#     'Kukiz15': 'black',
+#     'Lewica': 'red',
+#     'LD': 'pink',
+#     'niez.': 'gray',
+#     'PS': 'brown'
+# }
+
+# #VIII
+# club_colors = {
+#     'PiS': 'blue',
+#     'PO-KO': 'orange',
+#     'PSL-KP': 'green',
+#     'Konfederacja': 'navy',
+#     'Kukiz15': 'black',
+#     'PP': 'red',
+#     'UPR': 'pink',
+#     'PSL-UED': 'cyan',
+#     'niez.': 'gray',
+#     'TERAZ!':'brown',
+#     'WiS': 'lime',
+#     'PO':'yellow',
+#     'nan':'darkgray'
+# }
 
 
 print(len(sizes))
@@ -47,7 +85,7 @@ for i, club in enumerate(mps_clubs):
 
 # annotations
 for i in range(len(df_pca)):
-    plt.annotate(str(i), (df_pca[i, 0], df_pca[i, 1]))
+    plt.annotate(str(i), (df_pca[i, 0], df_pca[i, 1]), size=5)
 
 
 plt.show()
