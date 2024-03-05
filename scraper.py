@@ -1,25 +1,17 @@
+import time
+
 import numpy as np
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 
-term = 9
 
-start_id_dict = {'7': 37494,
-                 '8': 43801,
-                 '9': 51988,
-                 '10': 61401}
-voting_nostart = start_id_dict[str(term)]
-# TODO handle terms [3-6] (no nsf for them)
-
-
-server_errors_counter=0
 def get_html(voting_no, club_id):
     url = "https://www.sejm.gov.pl/sejm" + str(term) + ".nsf/agent.xsp?symbol=klubglos&IdGlosowania=" + \
           str(voting_nostart + voting_no) + \
           "&KodKlubu=" + club_id
-    #print(voting_nostart + voting_no)
+    # print(voting_nostart + voting_no)
 
     while True:
         try:
@@ -29,16 +21,15 @@ def get_html(voting_no, club_id):
             return html
         except:
             print("Server error occurred (get_html)")
+            time.sleep(5)
             global server_errors_counter
-            server_errors_counter+=1
+            server_errors_counter += 1
             continue
 
 
-
-print("#####################################################################################################")
-
-
 def voting_result(html):
+    """function parsing html to dataframe for 1 voting and 1 club"""
+
     soup = BeautifulSoup(html, 'html.parser')
     tbody = soup.find('tbody')
     rows = tbody.find_all('tr')
@@ -52,7 +43,7 @@ def voting_result(html):
             try:
                 mps.append(cols[1 + 3 * i].text)
                 vote = cols[2 + 3 * i].text.replace('Za', '1').replace('Przeciw', '-1') \
-                    .replace('Wstrzymał się', '0').replace('Nieobecny', 'nan')
+                    .replace('Wstrzymał się', '0').replace('Nieobecny', 'nan').replace('Głos ważny', 'nan')
                 votes_bin.append(int(vote) if vote != 'nan' else np.nan)
             except IndexError:
                 pass
@@ -61,50 +52,42 @@ def voting_result(html):
     return pd.DataFrame(dicts, index=[0])
 
 
-clubs_url = "https://api.sejm.gov.pl/sejm/term" + str(term) + "/clubs"  # shouldn't use this
-mps_url = "https://api.sejm.gov.pl/sejm/term" + str(term) + "/MP"
+def create_votings(term):
+    """function returning dataframe with votings metadata"""
 
-clubs = pd.read_json(clubs_url)
-mps = pd.read_json(mps_url)
+    i = 1
+    count_none_streak = 0
+    votings = pd.DataFrame()
+    while True:
+        votings_url = "https://api.sejm.gov.pl/sejm/term" + str(term) + "/votings/" + str(i)
+        votings_sitting = pd.read_json(votings_url)
+        if len(votings_sitting) > 0:
+            votings = pd.concat([votings, votings_sitting])
+            i += 1
+            count_none_streak = 0
+        else:
+            count_none_streak += 1  # handling sittings without any votings
+            if count_none_streak > 5:
+                break
+            i += 1
 
-i = 1
-count_none_streak = 0
-votings = pd.DataFrame()
-while True:
-    votings_url = "https://api.sejm.gov.pl/sejm/term" + str(term) + "/votings/" + str(i)
-    votings_sitting = pd.read_json(votings_url)
-    if len(votings_sitting) > 0:
-        votings = pd.concat([votings, votings_sitting])
-        i += 1
-        count_none_streak = 0
-    else:
-        count_none_streak += 1  # handling sittings without any votings
-        if count_none_streak > 5:
-            break
-        i += 1
-
-# we sort our votings to construct voting id number later on
-votings.sort_values(['sitting', 'number'], ascending=[True, True], inplace=True)
-votings = votings.reset_index()
-
-# TRADITIONAL votings (id 53009 - 53024) - no data
-print("total num of votings in term: " + str(len(votings)))
-
-# list of indexes of proper votings
-electronic_votings = votings.index[votings['kind'] == "ELECTRONIC"].tolist()  # TODO handle other votings
-print("num of electronic votings in term: " + str(len(electronic_votings)))
-
-#print(electronic_votings)
-voting_df = pd.DataFrame(columns=(pd.Series(['voting_no'] + list(mps['lastFirstName']))))
+    # we sort our votings to construct voting id number later on
+    votings.sort_values(['sitting', 'votingNumber'], ascending=[True, True], inplace=True)
+    votings = votings.reset_index()
+    return votings
 
 
 def process_club(club):
+    """results for 1 club in 1 voting extended with voting id"""
+
     vres = voting_result(get_html(vote_n, club))
     vres['voting_no'] = vote_n
     return vres
 
 
 def append_voting_df(vote_n, clubs):
+    """function editing voting_df - appending 1 voting"""
+
     global voting_df
 
     with ThreadPoolExecutor() as executor:
@@ -117,12 +100,9 @@ def append_voting_df(vote_n, clubs):
     voting_df = pd.concat([voting_df, aggregated_results])
 
 
-#electronic_votings = electronic_votings[:100]
-
-
-# print(electronic_votings)
-
 def clubs_in_voting(sitting, number):
+    """function returning list of clubs in specific voting"""
+
     url = "https://www.sejm.gov.pl/Sejm" + str(term) + ".nsf/agent.xsp?symbol=glosowania&NrKadencji=" + str(
         term) + "&NrPosiedzenia=" + str(sitting) + "&NrGlosowania=" + str(number)
 
@@ -139,25 +119,63 @@ def clubs_in_voting(sitting, number):
 
             return clubs
         except:
-            print("Server error occurred (clubs_in_voting)")
-            global server_errors_counter
-            server_errors_counter += 1
+            try:
+                url = "https://www.sejm.gov.pl/Sejm" + str(
+                    term) + ".nsf/agent.xsp?symbol=glosowaniaL&NrKadencji=" + str(
+                    term) + "&NrPosiedzenia=" + str(sitting) + "&NrGlosowania=" + str(number)
+            except:
+                print("Server error occurred (clubs_in_voting)")
+                time.sleep(5)
+                global server_errors_counter
+                server_errors_counter += 1
+                continue
             continue
 
-sittings = votings['sitting']  # optimizing code by searching only in necessary columns
-numbers = votings['number']
 
-for vote_n in electronic_votings:
+if __name__ == '__main__':
+    term = int(input("Enter term number: "))
 
-    if vote_n % 100 == 0:
-        print(vote_n)
+    start_id_dict = {'7': 37494,
+                     '8': 43801,
+                     '9': 51988,
+                     '10': 61401}
+    voting_nostart = start_id_dict[str(term)]
+    # TODO handle terms [3-6] (no nsf for them)
 
-    sitting = sittings.loc[vote_n]
-    number = numbers.loc[vote_n]
+    server_errors_counter = 0
 
-    clubs = clubs_in_voting(sitting, number)
-    append_voting_df(vote_n, clubs)
+    votings = create_votings(term)
 
-print('server errors: '+str(server_errors_counter))
-voting_df.to_csv('voting_dfIX_full.csv')
-print('all done')
+    # TRADITIONAL votings (id 53009 - 53024) - no data
+    print("total num of votings in term: " + str(len(votings)))
+
+    # list of indexes of proper votings
+    electronic_votings = votings.index[votings['kind'] != "TRADITIONAL"].tolist()  # TODO handle other votings
+    print("num of electronic votings in term: " + str(len(electronic_votings)))
+
+    clubs_url = "https://api.sejm.gov.pl/sejm/term" + str(term) + "/clubs"  # shouldn't use this for mp to club assignment
+    mps_url = "https://api.sejm.gov.pl/sejm/term" + str(term) + "/MP"
+
+    # clubs = pd.read_json(clubs_url)  # not used
+    mps = pd.read_json(mps_url)
+
+    # print(electronic_votings)
+    voting_df = pd.DataFrame(columns=(pd.Series(['voting_no'] + list(mps['lastFirstName']))))
+
+    sittings = votings['sitting']  # optimizing code by searching only in necessary columns
+    numbers = votings['votingNumber']
+
+    for vote_n in electronic_votings:
+
+        if vote_n % 10 == 0:
+            print(vote_n)
+
+        sitting = sittings.loc[vote_n]
+        number = numbers.loc[vote_n]
+
+        clubs = clubs_in_voting(sitting, number)
+        append_voting_df(vote_n, clubs)
+
+    print('server errors: ' + str(server_errors_counter))
+    voting_df.to_csv('voting_df' + str(term) + '_full.csv')
+    print('all done')
